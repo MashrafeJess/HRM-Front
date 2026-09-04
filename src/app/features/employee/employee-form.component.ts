@@ -1,9 +1,14 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { form, required, FormField, FormRoot } from '@angular/forms/signals';
 import { firstValueFrom } from 'rxjs';
 import { EmployeeService } from './employee.service';
 import { Employee } from './employee.model';
+import { CompanyService } from '../company/company.service';
+import { DepartmentService } from '../department/department.service';
+import { Department } from '../department/department.model';
+import { RoleService } from '../role/role.service';
 
 type EmployeeFormModel = Omit<Employee, 'password'> & { password: string };
 
@@ -23,8 +28,8 @@ const EMPTY_EMPLOYEE: EmployeeFormModel = {
   dateOfBirth: '',
   joinDate: '',
   salary: 0,
-  status: 'Working',
-  isActive: null,
+  status: 'Active',
+  isActive: true,
 };
 
 @Component({
@@ -88,12 +93,43 @@ const EMPTY_EMPLOYEE: EmployeeFormModel = {
 
           <div class="row">
             <div class="col-md-6 mb-3">
-              <label class="form-label" for="companyId">Company Id</label>
-              <input id="companyId" type="number" class="form-control" [formField]="employeeForm.companyId" />
+              <label class="form-label" for="companyId">Company</label>
+              <select id="companyId" class="form-select" [value]="employeeModel().companyId" (change)="onCompanyChange($event)">
+                <option [value]="0" disabled>Select a company</option>
+                @for (company of companies()?.items ?? []; track company.companyId) {
+                  <option [value]="company.companyId">{{ company.companyName }}</option>
+                }
+              </select>
             </div>
             <div class="col-md-6 mb-3">
-              <label class="form-label" for="departmentId">Department Id</label>
-              <input id="departmentId" type="number" class="form-control" [formField]="employeeForm.departmentId" />
+              <label class="form-label" for="departmentId">Department</label>
+              <select
+                id="departmentId"
+                class="form-select"
+                [value]="employeeModel().departmentId"
+                (change)="onDepartmentChange($event)"
+              >
+                <option [value]="0" disabled>Select a department</option>
+                @for (department of departments(); track department.departmentId) {
+                  <option [value]="department.departmentId">{{ department.departmentName }}</option>
+                }
+              </select>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label" for="roleId">Role</label>
+              <select id="roleId" class="form-select" [value]="employeeModel().roleId ?? ''" (change)="onRoleChange($event)">
+                <option value="">Select a role</option>
+                @for (role of roles(); track role.roleId) {
+                  <option [value]="role.roleId">{{ role.roleName }}</option>
+                }
+              </select>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label" for="status">Status</label>
+              <input id="status" class="form-control" [formField]="employeeForm.status" />
             </div>
           </div>
 
@@ -113,10 +149,6 @@ const EMPTY_EMPLOYEE: EmployeeFormModel = {
               <label class="form-label" for="salary">Salary</label>
               <input id="salary" type="number" class="form-control" [formField]="employeeForm.salary" />
             </div>
-            <div class="col-md-6 mb-4">
-              <label class="form-label" for="status">Status</label>
-              <input id="status" class="form-control" [formField]="employeeForm.status" />
-            </div>
           </div>
 
           <div class="d-flex align-items-center gap-3">
@@ -132,10 +164,17 @@ const EMPTY_EMPLOYEE: EmployeeFormModel = {
 })
 export class EmployeeFormComponent {
   private readonly employeeService = inject(EmployeeService);
+  private readonly companyService = inject(CompanyService);
+  private readonly departmentService = inject(DepartmentService);
+  private readonly roleService = inject(RoleService);
   private readonly route = inject(ActivatedRoute);
 
   employeeModel = signal<EmployeeFormModel>({ ...EMPTY_EMPLOYEE });
   saved = signal(false);
+
+  companies = toSignal(this.companyService.getAllCompanies('asc', 1, 100));
+  roles = toSignal(this.roleService.getAllRoles(), { initialValue: [] });
+  departments = signal<Department[]>([]);
 
   employeeForm = form(
     this.employeeModel,
@@ -147,17 +186,46 @@ export class EmployeeFormComponent {
       submission: {
         action: async () => {
           const result = await firstValueFrom(this.employeeService.addOrUpdateEmployee(this.employeeModel()));
-          this.employeeModel.set({ ...result, password: '' });
+          this.employeeModel.update((current) => ({ ...current, ...result, password: '' }));
           this.saved.set(true);
         },
       },
     },
   );
 
+  onCompanyChange(event: Event): void {
+    const companyId = Number((event.target as HTMLSelectElement).value);
+    this.employeeModel.update((current) => ({ ...current, companyId, departmentId: 0 }));
+  }
+
+  onDepartmentChange(event: Event): void {
+    const departmentId = Number((event.target as HTMLSelectElement).value);
+    this.employeeModel.update((current) => ({ ...current, departmentId }));
+  }
+
+  onRoleChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.employeeModel.update((current) => ({ ...current, roleId: value ? Number(value) : null }));
+  }
+
   constructor() {
+    effect(() => {
+      const companyId = this.employeeModel().companyId;
+      if (!companyId) {
+        this.departments.set([]);
+        return;
+      }
+      this.departmentService
+        .getAllDepartmentsByCompanyId(companyId, 'asc', 1, 100)
+        .subscribe((result) => this.departments.set(result.items));
+    });
+
     const idParam = this.route.snapshot.paramMap.get('id');
     if (idParam) {
-      this.employeeModel.update((employee) => ({ ...employee, id: Number(idParam) }));
+      const employeeId = Number(idParam);
+      this.employeeService.getEmployeeById(employeeId).subscribe((employee) => {
+        this.employeeModel.set({ ...employee, id: employeeId, password: '' });
+      });
     }
   }
 }

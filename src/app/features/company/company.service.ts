@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { PagedResult } from '../../shared/models/paged-result.model';
-import { Company, CompanyUpsertRequest } from './company.model';
+import { Company } from './company.model';
 
 @Injectable({ providedIn: 'root' })
 export class CompanyService {
@@ -22,7 +22,6 @@ export class CompanyService {
   }
 
   editCompany(payload: Company): Observable<Company> {
-    const body: CompanyUpsertRequest = { dto: payload };
-    return this.http.post<Company>('/api/Company/EditCompany', body);
+    return this.http.post<Company>('/api/Company/EditCompany', payload);
   }
 }

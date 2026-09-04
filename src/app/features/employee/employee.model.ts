@@ -17,7 +17,3 @@ export interface Employee {
   status: string;
   isActive: boolean | null;
 }
-
-export interface EmployeeUpsertRequest {
-  dto: Employee;
-}

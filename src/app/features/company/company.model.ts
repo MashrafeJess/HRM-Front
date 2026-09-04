@@ -10,7 +10,3 @@ export interface Company {
   createdAt: string | null;
   updatedAt: string | null;
 }
-
-export interface CompanyUpsertRequest {
-  dto: Company;
-}
