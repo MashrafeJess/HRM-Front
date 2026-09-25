@@ -1,7 +1,6 @@
-import { Component, effect, inject, linkedSignal, signal } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { CompanyService } from '../company/company.service';
+import { TokenStorageService } from '../../core/auth/token-storage.service';
 import { DepartmentService } from './department.service';
 import { Department } from './department.model';
 import { PagedResult } from '../../shared/models/paged-result.model';
@@ -15,15 +14,6 @@ import { PagedResult } from '../../shared/models/paged-result.model';
       <a [routerLink]="['/departments/new']" [queryParams]="{ companyId: companyId() }" class="btn btn-primary btn-sm">
         + New Department
       </a>
-    </div>
-
-    <div class="mb-3" style="max-width: 320px;">
-      <label class="form-label" for="companyPicker">Company</label>
-      <select id="companyPicker" class="form-select" [value]="companyId()" (change)="onCompanyChange($event)">
-        @for (company of companies()?.items ?? []; track company.companyId) {
-          <option [value]="company.companyId">{{ company.companyName }}</option>
-        }
-      </select>
     </div>
 
     <div class="card shadow-sm border-0">
@@ -67,11 +57,13 @@ import { PagedResult } from '../../shared/models/paged-result.model';
   `,
 })
 export class DepartmentListComponent {
-  private readonly companyService = inject(CompanyService);
+  private readonly tokenStorage = inject(TokenStorageService);
   private readonly departmentService = inject(DepartmentService);
 
-  companies = toSignal(this.companyService.getAllCompanies('asc', 1, 100));
-  companyId = linkedSignal<number>(() => this.companies()?.items[0]?.companyId ?? 0);
+  // Only a Company Admin reaches this page (route-guarded), and a Company Admin has
+  // exactly one company — GetAllCompany is Super Admin-only now, so there is nothing
+  // to pick from here; always scope to the admin's own company.
+  companyId = signal<number>(this.tokenStorage.getCompanyId() ?? 0);
   departments = signal<PagedResult<Department> | undefined>(undefined);
 
   constructor() {
@@ -85,9 +77,5 @@ export class DepartmentListComponent {
         .getAllDepartmentsByCompanyId(companyId, 'asc', 1, 100)
         .subscribe((result) => this.departments.set(result));
     });
-  }
-
-  onCompanyChange(event: Event): void {
-    this.companyId.set(Number((event.target as HTMLSelectElement).value));
   }
 }

@@ -16,4 +16,11 @@ export class PayrollService {
     const params = new HttpParams().set('companyId', companyId).set('yearId', yearId).set('monthId', monthId);
     return this.http.get<Payroll[]>('/api/Payroll/GetPayRollForCompany', { params });
   }
+
+  getLivePayrollStatusForEmployee(employeeId: number): Observable<Payroll> {
+    // Computed live from current attendance data on every call — nothing is persisted,
+    // so payrollId stays 0 and generatedAt stays null in the response.
+    const params = new HttpParams().set('employeeId', employeeId);
+    return this.http.get<Payroll>('/api/Payroll/GetPayrollStatusForEmployee', { params });
+  }
 }

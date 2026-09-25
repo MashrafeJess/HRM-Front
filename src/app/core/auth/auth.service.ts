@@ -45,6 +45,27 @@ export class AuthService {
       }),
     );
   }
+
+  // Synchronous, no network call — for when the guard finds an already-expired token
+  // (e.g. via browser Back navigation) and needs to reset local state immediately,
+  // without waiting on (or bothering with) a server-side revoke of a dead session.
+  forceLogout(): void {
+    this.tokenStorage.clear();
+    this.isLoggedIn.set(false);
+    this.currentUser.set(null);
+  }
+}
+
+const CLAIM_TYPES = {
+  nameIdentifier: 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier',
+  name: 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name',
+  email: 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress',
+  role: 'http://schemas.microsoft.com/ws/2008/06/identity/claims/role',
+};
+
+function claim(claims: Record<string, unknown>, shortKey: string, longKey: string): string {
+  const value = claims[shortKey] ?? claims[longKey];
+  return value == null ? '' : String(value);
 }
 
 function decodeAuthUser(token: string | null): AuthUser | null {
@@ -53,9 +74,9 @@ function decodeAuthUser(token: string | null): AuthUser | null {
   if (!claims) return null;
 
   return {
-    id: Number(claims['NameIdentifier']),
-    name: String(claims['Name'] ?? ''),
-    email: String(claims['Email'] ?? ''),
-    role: String(claims['Role'] ?? ''),
+    id: Number(claim(claims, 'NameIdentifier', CLAIM_TYPES.nameIdentifier)),
+    name: claim(claims, 'Name', CLAIM_TYPES.name),
+    email: claim(claims, 'Email', CLAIM_TYPES.email),
+    role: claim(claims, 'Role', CLAIM_TYPES.role),
   };
 }

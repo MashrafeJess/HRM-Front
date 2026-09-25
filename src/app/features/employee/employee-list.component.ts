@@ -1,7 +1,6 @@
-import { Component, effect, inject, linkedSignal, signal } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { CompanyService } from '../company/company.service';
+import { TokenStorageService } from '../../core/auth/token-storage.service';
 import { DepartmentService } from '../department/department.service';
 import { Department } from '../department/department.model';
 import { EmployeeService } from './employee.service';
@@ -18,14 +17,6 @@ import { PagedResult } from '../../shared/models/paged-result.model';
     </div>
 
     <div class="row g-3 mb-3">
-      <div class="col-auto" style="min-width: 220px;">
-        <label class="form-label" for="companyPicker">Company</label>
-        <select id="companyPicker" class="form-select" [value]="companyId()" (change)="onCompanyChange($event)">
-          @for (company of companies()?.items ?? []; track company.companyId) {
-            <option [value]="company.companyId">{{ company.companyName }}</option>
-          }
-        </select>
-      </div>
       <div class="col-auto" style="min-width: 220px;">
         <label class="form-label" for="departmentFilter">Department</label>
         <select id="departmentFilter" class="form-select" [value]="departmentId() ?? ''" (change)="onDepartmentChange($event)">
@@ -72,12 +63,13 @@ import { PagedResult } from '../../shared/models/paged-result.model';
   `,
 })
 export class EmployeeListComponent {
-  private readonly companyService = inject(CompanyService);
+  private readonly tokenStorage = inject(TokenStorageService);
   private readonly departmentService = inject(DepartmentService);
   private readonly employeeService = inject(EmployeeService);
 
-  companies = toSignal(this.companyService.getAllCompanies('asc', 1, 100));
-  companyId = linkedSignal<number>(() => this.companies()?.items[0]?.companyId ?? 0);
+  // Only a Company Admin reaches this page — always scoped to their own company;
+  // GetAllCompany (needed for a picker) is Super Admin-only now.
+  companyId = signal<number>(this.tokenStorage.getCompanyId() ?? 0);
   departmentId = signal<number | null>(null);
   departments = signal<Department[]>([]);
   employees = signal<PagedResult<Employee> | undefined>(undefined);
@@ -104,12 +96,14 @@ export class EmployeeListComponent {
       }
       this.employeeService
         .getAllEmployeesByCompanyId(companyId, departmentId, 'asc', 1, 100)
-        .subscribe((result) => this.employees.set(result));
+        .subscribe((result) => {
+          console.log(
+            '[EmployeeListComponent] employees loaded, ids for Edit links:',
+            result.items.map((e) => ({ id: e.id, firstName: e.firstName })),
+          );
+          this.employees.set(result);
+        });
     });
-  }
-
-  onCompanyChange(event: Event): void {
-    this.companyId.set(Number((event.target as HTMLSelectElement).value));
   }
 
   onDepartmentChange(event: Event): void {

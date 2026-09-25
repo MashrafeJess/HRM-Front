@@ -6,7 +6,7 @@ This document describes every HTTP endpoint exposed by the HRM Web API, for use 
 
 - **Base URL**: `https://<host>/api`
 - **Auth**: The backend issues a JWT (see `POST /api/Auth/login`) containing claims `NameIdentifier` (employee id), `Email`, `Name` (first name), and `Role` (role name, free-text from the `Roles` table — there is no fixed enum of role names in this system; roles are created ad-hoc via `POST /api/Role/AddOrUpdateRole`).
-- **⚠️ Current state**: no controller or action in the backend has an `[Authorize]` attribute yet (only `Login` has `[AllowAnonymous]`). Every endpoint below is reachable without a token today. The "Roles allowed" field in each section states what *should* eventually be enforced based on the nature of the action — treat it as a TODO for the backend, not as current behavior. Do not build frontend logic that assumes the backend already rejects unauthorized calls.
+- **⚠️ Current state**: `[Authorize]` is now enforced on the [Attendance](#attendance) controller (see its "🔒 Enforced" notes for the exact roles per endpoint — role values are `Company Admin` and `Common`, matching a `Roles.RoleName` row exactly, case-sensitive). No other controller has `[Authorize]` yet; every non-Attendance endpoint below is still reachable without a token. For those, the "Roles allowed" field states what *should* eventually be enforced based on the nature of the action — treat it as a TODO for the backend, not as current behavior. Do not build frontend logic that assumes an unenforced endpoint rejects unauthorized calls — but for Attendance, do send the bearer token and do handle `401`/`403`.
 - **Nullable fields**: a field marked `nullable` is optional in requests and may be `null` in responses. A field with no `nullable` marker is required in requests and always present in responses.
 - **Pagination wrapper**: any endpoint returning `PagedResult<T>` responds with:
   ```json
@@ -349,7 +349,7 @@ Base route: `api/Attendance`
 
 ⚠️ The literal route contains an unencoded `&`. When calling from Angular's `HttpClient`, do not URL-encode it yourself — pass the path as-is (`/api/Attendance/CheckIn&CheckOut`); most HTTP clients leave `&` untouched in a path segment. Verify against a live call before relying on this.
 
-Roles allowed: Employee (self check-in/out), Admin/Manager (on behalf of others).
+🔒 **Enforced**: requires `Authorization: Bearer <accessToken>`. Roles allowed: `Company Admin`, `Common`.
 
 **Request body** (wraps `AttendanceDto` under a `dto` key, since the command is `CheckInCommand(AttendanceDto Dto)`):
 
@@ -389,7 +389,7 @@ Roles allowed: Employee (self check-in/out), Admin/Manager (on behalf of others)
 
 ### GET `/api/Attendance/GetAttendanceByDate`
 
-Roles allowed: Admin, Manager.
+🔒 **Enforced**: requires `Authorization: Bearer <accessToken>`. Roles allowed: `Company Admin`, `Common`.
 
 **Query params**: `companyId` (`long`, required), `date` (`DateOnly`, `"YYYY-MM-DD"`, required).
 
@@ -399,7 +399,7 @@ Roles allowed: Admin, Manager.
 
 ### GET `/api/Attendance/GetAttendanceByEmployeeId`
 
-Roles allowed: Employee (own records), Admin/Manager (any).
+🔒 **Enforced**: requires `Authorization: Bearer <accessToken>`. Roles allowed: `Company Admin`, `Common`.
 
 **Query params**: `employeeId` (`long`, required).
 
@@ -409,7 +409,7 @@ Roles allowed: Employee (own records), Admin/Manager (any).
 
 ### GET `/api/Attendance/GetAttendancesStatisticsByEmployeeId`
 
-Roles allowed: Employee (own), Admin/Manager (any).
+🔒 **Enforced**: requires `Authorization: Bearer <accessToken>`. Roles allowed: `Company Admin`, `Common`.
 
 **Query params**: `employeeId` (`long`, required), `monthId` (`int`, required), `yearId` (`int`, required).
 
@@ -426,7 +426,7 @@ Roles allowed: Employee (own), Admin/Manager (any).
 
 ### GET `/api/Attendance/GetAttendanceSummaryForMonth`
 
-Roles allowed: Admin, Manager.
+🔒 **Enforced**: requires `Authorization: Bearer <accessToken>`. Roles allowed: `Company Admin` only.
 
 **Query params**: `companyId` (`long`, required), `monthId` (`int`, required), `yearId` (`long`, required).
 
@@ -457,7 +457,7 @@ Roles allowed: Admin, Manager.
 
 ### GET `/api/Attendance/GetAttendanceSummaryForADay`
 
-Roles allowed: Admin, Manager.
+🔒 **Enforced**: requires `Authorization: Bearer <accessToken>`. Roles allowed: `Company Admin` only.
 
 **Query params**: `companyId` (`long`, required), `date` (`DateOnly`, `"YYYY-MM-DD"`, required).
 
@@ -594,7 +594,7 @@ Roles allowed: Admin, Manager.
 
 Things discovered while surveying the code that will bite you if the Angular side assumes "normal" REST behavior. Flag these to the backend owner rather than working around them silently in the frontend, since some are outright bugs:
 
-1. **No authorization is enforced anywhere yet.** Every `Roles allowed` note above is aspirational — the backend accepts unauthenticated calls on every endpoint today. Don't build frontend logic that depends on the backend rejecting an unauthorized role; it currently won't.
+1. **Authorization is now enforced on Attendance only.** Every action on the [Attendance](#attendance) controller requires a bearer token and a matching role (`Company Admin` and/or `Common` — see each endpoint's "🔒 Enforced" note); calling one without a token or with the wrong role now gets `401`/`403`. Every other controller still has no `[Authorize]` attribute — their `Roles allowed` notes remain aspirational and the backend accepts unauthenticated calls there today. Don't build frontend logic that depends on those unenforced endpoints rejecting an unauthorized role; they currently won't.
 2. **`GET /api/Department/GetDepartmentById{departmentId}`** has no `/` before the id — the real URL is e.g. `.../GetDepartmentById5`, not `.../GetDepartmentById/5`. Confirm this against a live call.
 3. Several "edit" endpoints echo back an **incomplete DTO** rather than the full saved record: `EditCompany` (missing id/timestamps), `EditDepartment` (missing id/employeeCount/timestamps), `AddOrUpdateRole` (missing timestamps). If you need the generated id or full record after a create, re-fetch it with the matching `GetById`/`GetAll` endpoint.
 4. **`AddLeaveRequest`** returns an empty `{}` body, not the saved leave request — re-fetch if you need it.

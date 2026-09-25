@@ -9,7 +9,12 @@ export class LeaveService {
 
   addLeaveRequest(payload: LeaveRequest): Observable<unknown> {
     // Backend returns an empty {} (MediatR Unit) — re-fetch via a GET endpoint if the saved record is needed.
+    console.log('[LeaveService] POST /api/Leave/AddLeaveRequest', { dto: payload });
     return this.http.post('/api/Leave/AddLeaveRequest', { dto: payload });
+  }
+
+  approveLeaveRequest(leaveRequestId: number): Observable<unknown> {
+    return this.http.post('/api/Leave/ApproveLeaveRequest', { leaveRequestId });
   }
 
   getLeaveRequestByEmployeeId(employeeId: number): Observable<LeaveRequest[]> {
@@ -24,6 +29,7 @@ export class LeaveService {
 
   getEmployeeLeaveRequestsByEmployeeId(employeeId: number): Observable<LeaveRequest[]> {
     const params = new HttpParams().set('employeeId', employeeId);
+    console.log('[LeaveService] GET /api/Leave/GetEmployeeLeaveRequestsByEmployeeId', { employeeId });
     return this.http.get<LeaveRequest[]>('/api/Leave/GetEmployeeLeaveRequestsByEmployeeId', { params });
   }
 

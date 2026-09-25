@@ -1,7 +1,5 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { AuthService } from '../../core/auth/auth.service';
-import { EmployeeService } from '../employee/employee.service';
-import { Employee } from '../employee/employee.model';
+import { TokenStorageService } from '../../core/auth/token-storage.service';
 import { AttendanceService } from './attendance.service';
 import { Attendance, AttendanceStatistics } from './attendance.model';
 import { nowTime, todayIso } from '../../shared/date.util';
@@ -103,22 +101,22 @@ import { nowTime, todayIso } from '../../shared/date.util';
   `,
 })
 export class AttendanceCheckinComponent {
-  private readonly authService = inject(AuthService);
-  private readonly employeeService = inject(EmployeeService);
+  private readonly tokenStorage = inject(TokenStorageService);
   private readonly attendanceService = inject(AttendanceService);
 
   saving = signal(false);
-  employee = signal<Employee | null>(null);
   history = signal<Attendance[]>([]);
   statistics = signal<AttendanceStatistics | null>(null);
 
   today = computed(() => this.history().find((record) => record.attendanceDate === todayIso()) ?? null);
 
   constructor() {
-    const employeeId = this.authService.currentUser()?.id;
+    const employeeId = this.tokenStorage.getEmployeeId();
+    const companyId = this.tokenStorage.getCompanyId();
+    console.log('[Attendance] initialized', { employeeId, companyId });
+
     if (!employeeId) return;
 
-    this.employeeService.getEmployeeById(employeeId).subscribe((employee) => this.employee.set(employee));
     this.loadHistory(employeeId);
 
     const now = new Date();
@@ -128,37 +126,57 @@ export class AttendanceCheckinComponent {
   }
 
   checkIn(): void {
+    console.log('[Attendance] Check In button clicked');
     this.mark({ checkIn: nowTime() });
   }
 
   checkOut(): void {
+    console.log('[Attendance] Check Out button clicked');
     this.mark({ checkOut: nowTime() });
   }
 
   private mark(times: { checkIn?: string; checkOut?: string }): void {
-    const employee = this.employee();
-    const employeeId = this.authService.currentUser()?.id;
-    if (!employee || !employeeId) return;
-
+    const employeeId = this.tokenStorage.getEmployeeId();
+    const companyId = this.tokenStorage.getCompanyId();
     const existing = this.today();
+
+    console.log('[Attendance] mark called', {
+      times,
+      employeeId,
+      companyId,
+      today: existing,
+    });
+
+    if (!employeeId || !companyId) {
+      console.warn('[Attendance] request skipped: missing employeeId or companyId', { employeeId, companyId });
+      return;
+    }
+
+    const payload = {
+      attendanceId: existing?.attendanceId ?? null,
+      companyId,
+      employeeId,
+      attendanceDate: todayIso(),
+      checkIn: times.checkIn ?? existing?.checkIn ?? null,
+      checkOut: times.checkOut ?? existing?.checkOut ?? null,
+      status: existing?.status ?? null,
+      remarks: existing?.remarks ?? null,
+    };
+
+    console.log('[Attendance] sending check-in/check-out payload', payload);
     this.saving.set(true);
     this.attendanceService
-      .checkInOrOut({
-        attendanceId: existing?.attendanceId ?? null,
-        companyId: employee.companyId,
-        employeeId,
-        attendanceDate: todayIso(),
-        checkIn: times.checkIn ?? existing?.checkIn ?? null,
-        checkOut: times.checkOut ?? existing?.checkOut ?? null,
-        status: existing?.status ?? null,
-        remarks: existing?.remarks ?? null,
-      })
+      .checkInOrOut(payload)
       .subscribe({
-        next: () => {
+        next: (response) => {
+          console.log('[Attendance] check-in/check-out succeeded', response);
           this.saving.set(false);
           this.loadHistory(employeeId);
         },
-        error: () => this.saving.set(false),
+        error: (error) => {
+          console.error('[Attendance] check-in/check-out failed', error);
+          this.saving.set(false);
+        },
       });
   }
 

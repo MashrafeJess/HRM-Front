@@ -2,10 +2,11 @@ import { Component, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { form, required, FormField, FormRoot } from '@angular/forms/signals';
 import { firstValueFrom } from 'rxjs';
-import { AuthService } from '../../core/auth/auth.service';
-import { EmployeeService } from '../employee/employee.service';
+import { TokenStorageService } from '../../core/auth/token-storage.service';
 import { LeaveService } from './leave.service';
-import { LeaveRequest } from './leave.model';
+import { LeaveRequest, LeaveType } from './leave.model';
+import { ErrorModalComponent } from '../../shared/error-modal.component';
+import { extractErrorMessage } from '../../shared/http-error.util';
 
 const EMPTY_LEAVE_REQUEST: LeaveRequest = {
   leaveRequestId: null,
@@ -26,7 +27,7 @@ const EMPTY_LEAVE_REQUEST: LeaveRequest = {
 
 @Component({
   selector: 'app-leave-request-form',
-  imports: [FormField, FormRoot],
+  imports: [FormField, FormRoot, ErrorModalComponent],
   template: `
     <h1 class="h3 mb-4">New Leave Request</h1>
 
@@ -34,8 +35,17 @@ const EMPTY_LEAVE_REQUEST: LeaveRequest = {
       <div class="card-body p-4">
         <form [formRoot]="leaveForm">
           <div class="mb-3">
-            <label class="form-label" for="leaveTypeId">Leave Type Id</label>
-            <input id="leaveTypeId" type="number" class="form-control" [formField]="leaveForm.leaveTypeId" />
+            <label class="form-label" for="leaveTypeId">Leave Type</label>
+            <select
+              id="leaveTypeId"
+              class="form-select"
+              [value]="leaveModel().leaveTypeId"
+              (change)="onLeaveTypeChange($event)"
+            >
+              @for (leaveType of leaveTypes; track leaveType.value) {
+                <option [value]="leaveType.value">{{ leaveType.label }}</option>
+              }
+            </select>
           </div>
 
           <div class="row">
@@ -74,23 +84,33 @@ const EMPTY_LEAVE_REQUEST: LeaveRequest = {
 
           <div class="d-flex align-items-center gap-3">
             <button type="submit" class="btn btn-primary" [disabled]="!leaveForm().valid()">Submit Request</button>
-            @if (saved()) {
-              <span class="text-success small">Request submitted.</span>
-            }
           </div>
         </form>
       </div>
     </div>
+
+    <app-error-modal [message]="errorMessage()" (closed)="errorMessage.set(null)" />
   `,
 })
 export class LeaveRequestFormComponent {
-  private readonly authService = inject(AuthService);
-  private readonly employeeService = inject(EmployeeService);
+  private readonly tokenStorage = inject(TokenStorageService);
   private readonly leaveService = inject(LeaveService);
   private readonly router = inject(Router);
 
   leaveModel = signal<LeaveRequest>({ ...EMPTY_LEAVE_REQUEST });
-  saved = signal(false);
+  errorMessage = signal<string | null>(null);
+  readonly leaveTypes = [
+    { value: LeaveType.Casual, label: 'Casual' },
+    { value: LeaveType.Sick, label: 'Sick' },
+    { value: LeaveType.Annual, label: 'Annual' },
+    { value: LeaveType.Maternity, label: 'Maternity' },
+    { value: LeaveType.Unpaid, label: 'Unpaid' },
+  ];
+
+  onLeaveTypeChange(event: Event): void {
+    const leaveTypeId = Number((event.target as HTMLSelectElement).value) as LeaveType;
+    this.leaveModel.update((current) => ({ ...current, leaveTypeId }));
+  }
 
   leaveForm = form(
     this.leaveModel,
@@ -101,21 +121,27 @@ export class LeaveRequestFormComponent {
     {
       submission: {
         action: async () => {
-          await firstValueFrom(this.leaveService.addLeaveRequest(this.leaveModel()));
-          this.saved.set(true);
-          this.router.navigateByUrl('/leaves');
+          try {
+            await firstValueFrom(this.leaveService.addLeaveRequest(this.leaveModel()));
+            this.router.navigateByUrl('/leaves');
+          } catch (error) {
+            this.errorMessage.set(extractErrorMessage(error));
+          }
         },
       },
     },
   );
 
   constructor() {
-    const employeeId = this.authService.currentUser()?.id;
-    if (!employeeId) return;
+    const employeeId = this.tokenStorage.getEmployeeId();
+    const companyId = this.tokenStorage.getCompanyId();
 
-    this.leaveModel.update((current) => ({ ...current, employeeId }));
-    this.employeeService.getEmployeeById(employeeId).subscribe((employee) => {
-      this.leaveModel.update((current) => ({ ...current, companyId: employee.companyId }));
-    });
+    console.log('[Leave] initializing request identifiers', { employeeId, companyId });
+
+    this.leaveModel.update((current) => ({
+      ...current,
+      employeeId: employeeId ?? 0,
+      companyId: companyId ?? 0,
+    }));
   }
 }

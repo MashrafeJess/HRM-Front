@@ -22,6 +22,7 @@ export class CompanyService {
   }
 
   editCompany(payload: Company): Observable<Company> {
-    return this.http.post<Company>('/api/Company/EditCompany', payload);
+    console.log('[CompanyService] editCompany request', { companyId: payload.companyId, dto: payload });
+    return this.http.post<Company>('/api/Company/EditCompany', { dto: payload });
   }
 }

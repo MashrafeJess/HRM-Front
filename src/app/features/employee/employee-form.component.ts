@@ -1,14 +1,16 @@
 import { Component, effect, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { form, required, FormField, FormRoot } from '@angular/forms/signals';
 import { firstValueFrom } from 'rxjs';
 import { EmployeeService } from './employee.service';
 import { Employee } from './employee.model';
-import { CompanyService } from '../company/company.service';
+import { TokenStorageService } from '../../core/auth/token-storage.service';
 import { DepartmentService } from '../department/department.service';
 import { Department } from '../department/department.model';
 import { RoleService } from '../role/role.service';
+import { ErrorModalComponent } from '../../shared/error-modal.component';
+import { extractErrorMessage } from '../../shared/http-error.util';
 
 type EmployeeFormModel = Omit<Employee, 'password'> & { password: string };
 
@@ -34,7 +36,7 @@ const EMPTY_EMPLOYEE: EmployeeFormModel = {
 
 @Component({
   selector: 'app-employee-form',
-  imports: [FormField, FormRoot],
+  imports: [FormField, FormRoot, ErrorModalComponent],
   template: `
     <h1 class="h3 mb-4">{{ employeeModel().id ? 'Edit' : 'New' }} Employee</h1>
 
@@ -93,15 +95,6 @@ const EMPTY_EMPLOYEE: EmployeeFormModel = {
 
           <div class="row">
             <div class="col-md-6 mb-3">
-              <label class="form-label" for="companyId">Company</label>
-              <select id="companyId" class="form-select" [value]="employeeModel().companyId" (change)="onCompanyChange($event)">
-                <option [value]="0" disabled>Select a company</option>
-                @for (company of companies()?.items ?? []; track company.companyId) {
-                  <option [value]="company.companyId">{{ company.companyName }}</option>
-                }
-              </select>
-            </div>
-            <div class="col-md-6 mb-3">
               <label class="form-label" for="departmentId">Department</label>
               <select
                 id="departmentId"
@@ -153,26 +146,27 @@ const EMPTY_EMPLOYEE: EmployeeFormModel = {
 
           <div class="d-flex align-items-center gap-3">
             <button type="submit" class="btn btn-primary" [disabled]="!employeeForm().valid()">Save</button>
-            @if (saved()) {
-              <span class="text-success small">Saved.</span>
-            }
           </div>
         </form>
       </div>
     </div>
+
+    <app-error-modal [message]="errorMessage()" (closed)="errorMessage.set(null)" />
   `,
 })
 export class EmployeeFormComponent {
   private readonly employeeService = inject(EmployeeService);
-  private readonly companyService = inject(CompanyService);
+  private readonly tokenStorage = inject(TokenStorageService);
   private readonly departmentService = inject(DepartmentService);
   private readonly roleService = inject(RoleService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
-  employeeModel = signal<EmployeeFormModel>({ ...EMPTY_EMPLOYEE });
-  saved = signal(false);
+  // Only a Company Admin reaches this page — always scoped to their own company;
+  // GetAllCompany (needed for a picker) is Super Admin-only now.
+  employeeModel = signal<EmployeeFormModel>({ ...EMPTY_EMPLOYEE, companyId: this.tokenStorage.getCompanyId() ?? 0 });
+  errorMessage = signal<string | null>(null);
 
-  companies = toSignal(this.companyService.getAllCompanies('asc', 1, 100));
   roles = toSignal(this.roleService.getAllRoles(), { initialValue: [] });
   departments = signal<Department[]>([]);
 
@@ -185,18 +179,16 @@ export class EmployeeFormComponent {
     {
       submission: {
         action: async () => {
-          const result = await firstValueFrom(this.employeeService.addOrUpdateEmployee(this.employeeModel()));
-          this.employeeModel.update((current) => ({ ...current, ...result, password: '' }));
-          this.saved.set(true);
+          try {
+            await firstValueFrom(this.employeeService.addOrUpdateEmployee(this.employeeModel()));
+            this.router.navigateByUrl('/employees');
+          } catch (error) {
+            this.errorMessage.set(extractErrorMessage(error));
+          }
         },
       },
     },
   );
-
-  onCompanyChange(event: Event): void {
-    const companyId = Number((event.target as HTMLSelectElement).value);
-    this.employeeModel.update((current) => ({ ...current, companyId, departmentId: 0 }));
-  }
 
   onDepartmentChange(event: Event): void {
     const departmentId = Number((event.target as HTMLSelectElement).value);
@@ -221,10 +213,18 @@ export class EmployeeFormComponent {
     });
 
     const idParam = this.route.snapshot.paramMap.get('id');
+    console.log('[EmployeeFormComponent] constructor, idParam from route =', idParam);
     if (idParam) {
       const employeeId = Number(idParam);
-      this.employeeService.getEmployeeById(employeeId).subscribe((employee) => {
-        this.employeeModel.set({ ...employee, id: employeeId, password: '' });
+      console.log('[EmployeeFormComponent] loading existing employee, employeeId =', employeeId);
+      this.employeeService.getEmployeeById(employeeId).subscribe({
+        next: (employee) => {
+          console.log('[EmployeeFormComponent] loaded employee for edit', employee);
+          this.employeeModel.set({ ...employee, id: employeeId, password: '' });
+        },
+        error: (error) => {
+          console.error('[EmployeeFormComponent] failed to load employee for edit, falling back to blank form', error);
+        },
       });
     }
   }

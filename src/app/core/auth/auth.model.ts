@@ -5,6 +5,13 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   accessToken: string;
+  refreshToken?: string;
+  CompanyId?: number;
+  companyId?: number;
+  EmployeeId?: number;
+  employeeId?: number;
+  DepartmentId?: number;
+  departmentId?: number;
 }
 
 export interface RefreshTokenResponse {

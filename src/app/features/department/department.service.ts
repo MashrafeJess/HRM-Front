@@ -9,7 +9,7 @@ export class DepartmentService {
   private readonly http = inject(HttpClient);
 
   editDepartment(payload: Department): Observable<Department> {
-    return this.http.post<Department>('/api/Department/EditDepartment', payload);
+    return this.http.post<Department>('/api/Department/EditDepartment', { dto: payload });
   }
 
   getAllDepartmentsByCompanyId(

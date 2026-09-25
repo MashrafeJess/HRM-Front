@@ -1,11 +1,12 @@
 import { Component, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
 import { form, required, FormField, FormRoot } from '@angular/forms/signals';
 import { firstValueFrom } from 'rxjs';
-import { CompanyService } from '../company/company.service';
+import { TokenStorageService } from '../../core/auth/token-storage.service';
 import { DepartmentService } from './department.service';
 import { Department } from './department.model';
+import { ErrorModalComponent } from '../../shared/error-modal.component';
+import { extractErrorMessage } from '../../shared/http-error.util';
 
 const EMPTY_DEPARTMENT: Department = {
   departmentId: null,
@@ -20,28 +21,13 @@ const EMPTY_DEPARTMENT: Department = {
 
 @Component({
   selector: 'app-department-form',
-  imports: [FormField, FormRoot],
+  imports: [FormField, FormRoot, ErrorModalComponent],
   template: `
     <h1 class="h3 mb-4">{{ departmentModel().departmentId ? 'Edit' : 'New' }} Department</h1>
 
     <div class="card shadow-sm border-0" style="max-width: 640px;">
       <div class="card-body p-4">
         <form [formRoot]="departmentForm">
-          <div class="mb-3">
-            <label class="form-label" for="companyId">Company</label>
-            <select
-              id="companyId"
-              class="form-select"
-              [value]="departmentModel().companyId"
-              (change)="onCompanyChange($event)"
-            >
-              <option [value]="0" disabled>Select a company</option>
-              @for (company of companies()?.items ?? []; track company.companyId) {
-                <option [value]="company.companyId">{{ company.companyName }}</option>
-              }
-            </select>
-          </div>
-
           <div class="mb-3">
             <label class="form-label" for="departmentName">Name</label>
             <input
@@ -67,23 +53,22 @@ const EMPTY_DEPARTMENT: Department = {
 
           <div class="d-flex align-items-center gap-3">
             <button type="submit" class="btn btn-primary" [disabled]="!departmentForm().valid()">Save</button>
-            @if (saved()) {
-              <span class="text-success small">Saved.</span>
-            }
           </div>
         </form>
       </div>
     </div>
+
+    <app-error-modal [message]="errorMessage()" (closed)="errorMessage.set(null)" />
   `,
 })
 export class DepartmentFormComponent {
   private readonly departmentService = inject(DepartmentService);
-  private readonly companyService = inject(CompanyService);
+  private readonly tokenStorage = inject(TokenStorageService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
-  companies = toSignal(this.companyService.getAllCompanies('asc', 1, 100));
   departmentModel = signal<Department>({ ...EMPTY_DEPARTMENT });
-  saved = signal(false);
+  errorMessage = signal<string | null>(null);
 
   departmentForm = form(
     this.departmentModel,
@@ -93,20 +78,16 @@ export class DepartmentFormComponent {
     {
       submission: {
         action: async () => {
-          const result = await firstValueFrom(this.departmentService.editDepartment(this.departmentModel()));
-          this.departmentModel.update((current) => ({ ...current, ...result }));
-          this.saved.set(true);
+          try {
+            await firstValueFrom(this.departmentService.editDepartment(this.departmentModel()));
+            this.router.navigateByUrl('/departments');
+          } catch (error) {
+            this.errorMessage.set(extractErrorMessage(error));
+          }
         },
       },
     },
   );
-
-  onCompanyChange(event: Event): void {
-    this.departmentModel.update((current) => ({
-      ...current,
-      companyId: Number((event.target as HTMLSelectElement).value),
-    }));
-  }
 
   constructor() {
     const idParam = this.route.snapshot.paramMap.get('id');
@@ -115,9 +96,13 @@ export class DepartmentFormComponent {
       return;
     }
 
+    // Only a Company Admin reaches this page — always scope a new department to
+    // their own company (the list still passes it as a query param too, but this
+    // covers navigating here directly).
     const companyIdParam = this.route.snapshot.queryParamMap.get('companyId');
-    if (companyIdParam) {
-      this.departmentModel.update((current) => ({ ...current, companyId: Number(companyIdParam) }));
+    const companyId = companyIdParam ? Number(companyIdParam) : this.tokenStorage.getCompanyId();
+    if (companyId) {
+      this.departmentModel.update((current) => ({ ...current, companyId }));
     }
   }
 }

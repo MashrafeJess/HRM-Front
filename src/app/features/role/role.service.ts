@@ -8,7 +8,7 @@ export class RoleService {
   private readonly http = inject(HttpClient);
 
   addOrUpdateRole(payload: Role): Observable<Role> {
-    return this.http.post<Role>('/api/Role/AddOrUpdateRole', payload);
+    return this.http.post<Role>('/api/Role/AddOrUpdateRole', { dto: payload });
   }
 
   getAllRoles(): Observable<Role[]> {

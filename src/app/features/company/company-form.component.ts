@@ -1,10 +1,14 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { NgOptimizedImage } from '@angular/common';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { form, required, FormField, FormRoot } from '@angular/forms/signals';
 import { firstValueFrom } from 'rxjs';
 import { CompanyService } from './company.service';
 import { Company } from './company.model';
+import { AuthService } from '../../core/auth/auth.service';
+import { TokenStorageService } from '../../core/auth/token-storage.service';
+import { ErrorModalComponent } from '../../shared/error-modal.component';
+import { extractErrorMessage } from '../../shared/http-error.util';
 
 const EMPTY_COMPANY: Company = {
   companyId: null,
@@ -21,7 +25,7 @@ const EMPTY_COMPANY: Company = {
 
 @Component({
   selector: 'app-company-form',
-  imports: [FormField, FormRoot, NgOptimizedImage],
+  imports: [FormField, FormRoot, NgOptimizedImage, ErrorModalComponent],
   template: `
     <h1 class="h3 mb-4">{{ companyModel().companyId ? 'Edit' : 'New' }} Company</h1>
 
@@ -83,21 +87,23 @@ const EMPTY_COMPANY: Company = {
 
           <div class="d-flex align-items-center gap-3">
             <button type="submit" class="btn btn-primary" [disabled]="!companyForm().valid()">Save</button>
-            @if (saved()) {
-              <span class="text-success small">Saved.</span>
-            }
           </div>
         </form>
       </div>
     </div>
+
+    <app-error-modal [message]="errorMessage()" (closed)="errorMessage.set(null)" />
   `,
 })
 export class CompanyFormComponent {
   private readonly companyService = inject(CompanyService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly authService = inject(AuthService);
+  private readonly tokenStorage = inject(TokenStorageService);
 
   companyModel = signal<Company>({ ...EMPTY_COMPANY });
-  saved = signal(false);
+  errorMessage = signal<string | null>(null);
   logoPreview = computed(() => this.companyModel().logoUrl || null);
 
   companyForm = form(
@@ -109,9 +115,13 @@ export class CompanyFormComponent {
     {
       submission: {
         action: async () => {
-          const result = await firstValueFrom(this.companyService.editCompany(this.companyModel()));
-          this.companyModel.set(result);
-          this.saved.set(true);
+          try {
+            await firstValueFrom(this.companyService.editCompany(this.companyModel()));
+            const isSuperAdmin = this.authService.currentUser()?.role === 'Super Admin';
+            this.router.navigateByUrl(isSuperAdmin ? '/companies' : '/dashboard');
+          } catch (error) {
+            this.errorMessage.set(extractErrorMessage(error));
+          }
         },
       },
     },
@@ -119,8 +129,14 @@ export class CompanyFormComponent {
 
   constructor() {
     const idParam = this.route.snapshot.paramMap.get('id');
-    if (idParam) {
-      this.companyService.getCompanyById(Number(idParam)).subscribe((company) => this.companyModel.set(company));
+    // Company Admin doesn't get a company picker/list — they land here with no :id
+    // and this resolves straight to the one company tied to their own account.
+    const companyId = idParam ? Number(idParam) : this.authService.currentUser()?.role !== 'Super Admin'
+      ? this.tokenStorage.getCompanyId()
+      : null;
+
+    if (companyId) {
+      this.companyService.getCompanyById(companyId).subscribe((company) => this.companyModel.set(company));
     }
   }
 }

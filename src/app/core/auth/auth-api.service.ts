@@ -11,7 +11,16 @@ export class AuthApiService {
 
   login(payload: LoginRequest): Observable<LoginResponse> {
     return this.http.post<LoginResponse>('/api/Auth/login', payload, { withCredentials: true }).pipe(
-      tap((response) => this.tokenStorage.setAccessToken(response.accessToken)),
+      tap((response) => {
+        console.log('[Auth] login response identifiers', {
+          companyId: response.CompanyId ?? response.companyId ?? null,
+          employeeId: response.EmployeeId ?? response.employeeId ?? null,
+          departmentId: response.DepartmentId ?? response.departmentId ?? null,
+          hasAccessToken: Boolean(response.accessToken),
+          hasRefreshToken: Boolean(response.refreshToken),
+        });
+        this.tokenStorage.setLoginData(response);
+      }),
       catchError((error: HttpErrorResponse) => {
         console.error('Login error:', error.status, error.message);
         return throwError(() => error);

@@ -1,6 +1,8 @@
-import { Component, effect, inject, linkedSignal, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { CompanyService } from '../company/company.service';
+import { TokenStorageService } from '../../core/auth/token-storage.service';
+import { DepartmentService } from '../department/department.service';
+import { EmployeeService } from '../employee/employee.service';
 import { LeaveService } from './leave.service';
 import { LeaveRequest, LeaveRequestStatus } from './leave.model';
 
@@ -11,10 +13,11 @@ import { LeaveRequest, LeaveRequestStatus } from './leave.model';
 
     <div class="row g-3 mb-3">
       <div class="col-auto" style="min-width: 220px;">
-        <label class="form-label" for="companyPicker">Company</label>
-        <select id="companyPicker" class="form-select" [value]="companyId()" (change)="onCompanyChange($event)">
-          @for (company of companies()?.items ?? []; track company.companyId) {
-            <option [value]="company.companyId">{{ company.companyName }}</option>
+        <label class="form-label" for="departmentFilter">Department</label>
+        <select id="departmentFilter" class="form-select" [value]="departmentId() ?? ''" (change)="onDepartmentChange($event)">
+          <option value="">All departments</option>
+          @for (department of departments()?.items ?? []; track department.departmentId) {
+            <option [value]="department.departmentId">{{ department.departmentName }}</option>
           }
         </select>
       </div>
@@ -76,26 +79,43 @@ import { LeaveRequest, LeaveRequestStatus } from './leave.model';
   `,
 })
 export class LeaveApprovalsComponent {
-  private readonly companyService = inject(CompanyService);
+  private readonly tokenStorage = inject(TokenStorageService);
+  private readonly departmentService = inject(DepartmentService);
+  private readonly employeeService = inject(EmployeeService);
   private readonly leaveService = inject(LeaveService);
 
-  companies = toSignal(this.companyService.getAllCompanies('asc', 1, 100));
-  companyId = linkedSignal<number>(() => this.companies()?.items[0]?.companyId ?? 0);
+  companyId = signal<number>(this.tokenStorage.getCompanyId() ?? 0);
+  departmentId = signal<number | null>(null);
+  departments = toSignal(this.departmentService.getAllDepartmentsByCompanyId(this.companyId(), 'asc', 1, 100));
+  employees = toSignal(this.employeeService.getAllEmployeesByCompanyId(this.companyId(), null, 'asc', 1, 100));
   status = signal<number>(LeaveRequestStatus.Pending);
-  requests = signal<LeaveRequest[]>([]);
+  allRequests = signal<LeaveRequest[]>([]);
   acting = signal(false);
+
+  requests = computed(() => {
+    const departmentId = this.departmentId();
+    if (!departmentId) return this.allRequests();
+
+    const employeeIds = new Set(
+      (this.employees()?.items ?? [])
+        .filter((employee) => employee.departmentId === departmentId && employee.id != null)
+        .map((employee) => employee.id as number),
+    );
+    return this.allRequests().filter((request) => employeeIds.has(request.employeeId));
+  });
 
   constructor() {
     effect(() => {
       const companyId = this.companyId();
       const status = this.status();
       if (!companyId) return;
-      this.leaveService.getLeaveRequestByStatus(status, companyId).subscribe((result) => this.requests.set(result));
+      this.leaveService.getLeaveRequestByStatus(status, companyId).subscribe((result) => this.allRequests.set(result));
     });
   }
 
-  onCompanyChange(event: Event): void {
-    this.companyId.set(Number((event.target as HTMLSelectElement).value));
+  onDepartmentChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.departmentId.set(value ? Number(value) : null);
   }
 
   onStatusChange(event: Event): void {
@@ -112,17 +132,36 @@ export class LeaveApprovalsComponent {
 
   private act(request: LeaveRequest, status: string): void {
     this.acting.set(true);
-    this.leaveService.addLeaveRequest({ ...request, status }).subscribe({
-      next: () => {
-        if (status === 'Approved') {
+
+    if (status === 'Approved') {
+      if (request.leaveRequestId == null) {
+        this.acting.set(false);
+        return;
+      }
+
+      this.leaveService.approveLeaveRequest(request.leaveRequestId).subscribe({
+        next: () => {
           this.leaveService
             .updateLeaveRequestStatus(
               { employeeId: request.employeeId, companyId: this.companyId(), remarks: null },
               request.fromDate.slice(0, 10),
               request.toDate.slice(0, 10),
             )
-            .subscribe();
-        }
+            .subscribe({
+              next: () => {
+                this.acting.set(false);
+                this.refresh();
+              },
+              error: () => this.acting.set(false),
+            });
+        },
+        error: () => this.acting.set(false),
+      });
+      return;
+    }
+
+    this.leaveService.addLeaveRequest({ ...request, status }).subscribe({
+      next: () => {
         this.acting.set(false);
         this.refresh();
       },
@@ -131,6 +170,6 @@ export class LeaveApprovalsComponent {
   }
 
   private refresh(): void {
-    this.leaveService.getLeaveRequestByStatus(this.status(), this.companyId()).subscribe((result) => this.requests.set(result));
+    this.leaveService.getLeaveRequestByStatus(this.status(), this.companyId()).subscribe((result) => this.allRequests.set(result));
   }
 }

@@ -1,8 +1,16 @@
+export enum LeaveType {
+  Casual = 1,
+  Sick = 2,
+  Annual = 3,
+  Maternity = 4,
+  Unpaid = 5,
+}
+
 export interface LeaveRequest {
   leaveRequestId: number | null;
   companyId: number;
   employeeId: number;
-  leaveTypeId: number;
+  leaveTypeId: LeaveType;
   fromDate: string;
   toDate: string;
   totalDays: number;

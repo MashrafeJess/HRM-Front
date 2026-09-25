@@ -15,6 +15,7 @@ export class AttendanceService {
 
   checkInOrOut(payload: AttendanceCheckInOutRequest): Observable<Attendance> {
     // Literal, unencoded "&" in the route (documented in API.md) — pass the path as-is.
+    console.log('[AttendanceService] POST /api/Attendance/CheckIn&CheckOut', { dto: payload });
     return this.http.post<Attendance>('/api/Attendance/CheckIn&CheckOut', { dto: payload });
   }
 

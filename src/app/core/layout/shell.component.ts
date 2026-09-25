@@ -20,28 +20,38 @@ import { AuthService } from '../auth/auth.service';
         </div>
 
         <nav class="nav nav-pills flex-column gap-1 flex-grow-1 overflow-auto">
-          <a class="nav-link text-dark" routerLink="/dashboard" routerLinkActive="active">Dashboard</a>
+          <a class="nav-link text-dark" routerLink="/dashboard" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Dashboard</a>
 
-          @if (isManager()) {
-            <a class="nav-link text-dark" routerLink="/companies" routerLinkActive="active">Companies</a>
-            <a class="nav-link text-dark" routerLink="/departments" routerLinkActive="active">Departments</a>
-            <a class="nav-link text-dark" routerLink="/employees" routerLinkActive="active">Employees</a>
-            <a class="nav-link text-dark" routerLink="/roles" routerLinkActive="active">Roles</a>
+          @if (isSuperAdmin()) {
+            <a class="nav-link text-dark" routerLink="/companies" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Companies</a>
+          }
+          @if (isCompanyAdmin()) {
+            <a class="nav-link text-dark" routerLink="/company" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">My Company</a>
+            <a class="nav-link text-dark" routerLink="/departments" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Departments</a>
+            <a class="nav-link text-dark" routerLink="/employees" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Employees</a>
+            <a class="nav-link text-dark" routerLink="/roles" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Roles</a>
+            <a class="nav-link text-dark" routerLink="/hr-assistant" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">HR Assistant</a>
           }
 
-          <a class="nav-link text-dark" routerLink="/attendance" routerLinkActive="active">Attendance</a>
-          @if (isManager()) {
-            <a class="nav-link text-dark" routerLink="/attendance/admin" routerLinkActive="active">Attendance (Admin)</a>
+          @if (!isSuperAdmin()) {
+            <a class="nav-link text-dark" routerLink="/attendance" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Attendance</a>
+          }
+          @if (isCompanyAdmin()) {
+            <a class="nav-link text-dark" routerLink="/attendance/admin" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Attendance (Admin)</a>
           }
 
-          <a class="nav-link text-dark" routerLink="/leaves" routerLinkActive="active">My Leave</a>
-          @if (isManager()) {
-            <a class="nav-link text-dark" routerLink="/leaves/approvals" routerLinkActive="active">Leave Approvals</a>
+          @if (!isSuperAdmin()) {
+            <a class="nav-link text-dark" routerLink="/leaves" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">My Leave</a>
+          }
+          @if (isCompanyAdmin()) {
+            <a class="nav-link text-dark" routerLink="/leaves/approvals" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Leave Approvals</a>
           }
 
-          <a class="nav-link text-dark" routerLink="/payroll" routerLinkActive="active">My Payroll</a>
-          @if (isManager()) {
-            <a class="nav-link text-dark" routerLink="/payroll/company" routerLinkActive="active">Payroll (Company)</a>
+          @if (!isSuperAdmin()) {
+            <a class="nav-link text-dark" routerLink="/payroll" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">My Payroll</a>
+          }
+          @if (isCompanyAdmin()) {
+            <a class="nav-link text-dark" routerLink="/payroll/company" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Payroll (Company)</a>
           }
         </nav>
 
@@ -51,12 +61,19 @@ import { AuthService } from '../auth/auth.service';
       <div class="flex-grow-1 d-flex flex-column overflow-auto bg-light">
         <header class="d-flex justify-content-between align-items-center border-bottom bg-white px-4 py-3">
           <input type="search" class="form-control w-auto" placeholder="Search" aria-label="Search" />
-          <div class="d-flex align-items-center gap-2">
+          <a routerLink="/profile" class="d-flex align-items-center gap-2 text-decoration-none text-dark">
             @if (authService.currentUser(); as user) {
               <span class="small text-muted">{{ user.name }} · {{ user.role }}</span>
+              <div
+                class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center fw-semibold"
+                style="width: 32px; height: 32px;"
+              >
+                {{ user.name.charAt(0).toUpperCase() }}
+              </div>
+            } @else {
+              <div class="rounded-circle bg-secondary" style="width: 32px; height: 32px;"></div>
             }
-            <div class="rounded-circle bg-secondary" style="width: 32px; height: 32px;"></div>
-          </div>
+          </a>
         </header>
 
         <main class="p-4 flex-grow-1">
@@ -70,10 +87,8 @@ export class ShellComponent {
   protected readonly authService = inject(AuthService);
   private readonly router = inject(Router);
 
-  isManager = computed(() => {
-    const role = this.authService.currentUser()?.role;
-    return role === 'Admin' || role === 'Manager';
-  });
+  isSuperAdmin = computed(() => this.authService.currentUser()?.role === 'Super Admin');
+  isCompanyAdmin = computed(() => this.authService.currentUser()?.role === 'Company Admin');
 
   async logout(): Promise<void> {
     await firstValueFrom(this.authService.logout());

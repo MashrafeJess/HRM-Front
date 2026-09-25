@@ -16,3 +16,14 @@ export function decodeJwt(token: string): Record<string, unknown> | null {
     return null;
   }
 }
+
+// A token can still be sitting in localStorage — and the isLoggedIn signal can still
+// read true — well after its `exp` has passed, since nothing re-checks the clock until
+// an actual HTTP call 401s. Navigating with the browser's Back/Forward buttons makes no
+// HTTP call, so route guards must check real expiry themselves, not just token presence.
+export function isTokenExpired(token: string): boolean {
+  const claims = decodeJwt(token);
+  const exp = claims?.['exp'];
+  if (typeof exp !== 'number') return true;
+  return Date.now() >= exp * 1000;
+}

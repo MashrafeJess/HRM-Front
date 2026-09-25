@@ -1,9 +1,11 @@
 import { Component, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { form, required, FormField, FormRoot } from '@angular/forms/signals';
 import { firstValueFrom } from 'rxjs';
 import { RoleService } from './role.service';
 import { Role } from './role.model';
+import { ErrorModalComponent } from '../../shared/error-modal.component';
+import { extractErrorMessage } from '../../shared/http-error.util';
 
 const EMPTY_ROLE: Role = {
   roleId: null,
@@ -15,7 +17,7 @@ const EMPTY_ROLE: Role = {
 
 @Component({
   selector: 'app-role-form',
-  imports: [FormField, FormRoot],
+  imports: [FormField, FormRoot, ErrorModalComponent],
   template: `
     <h1 class="h3 mb-4">{{ roleModel().roleId ? 'Edit' : 'New' }} Role</h1>
 
@@ -42,21 +44,21 @@ const EMPTY_ROLE: Role = {
 
           <div class="d-flex align-items-center gap-3">
             <button type="submit" class="btn btn-primary" [disabled]="!roleForm().valid()">Save</button>
-            @if (saved()) {
-              <span class="text-success small">Saved.</span>
-            }
           </div>
         </form>
       </div>
     </div>
+
+    <app-error-modal [message]="errorMessage()" (closed)="errorMessage.set(null)" />
   `,
 })
 export class RoleFormComponent {
   private readonly roleService = inject(RoleService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   roleModel = signal<Role>({ ...EMPTY_ROLE });
-  saved = signal(false);
+  errorMessage = signal<string | null>(null);
 
   roleForm = form(
     this.roleModel,
@@ -66,9 +68,12 @@ export class RoleFormComponent {
     {
       submission: {
         action: async () => {
-          const result = await firstValueFrom(this.roleService.addOrUpdateRole(this.roleModel()));
-          this.roleModel.update((current) => ({ ...current, ...result }));
-          this.saved.set(true);
+          try {
+            await firstValueFrom(this.roleService.addOrUpdateRole(this.roleModel()));
+            this.router.navigateByUrl('/roles');
+          } catch (error) {
+            this.errorMessage.set(extractErrorMessage(error));
+          }
         },
       },
     },

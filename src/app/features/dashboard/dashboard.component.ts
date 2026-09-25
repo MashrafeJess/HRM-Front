@@ -9,13 +9,23 @@ import { AuthService } from '../../core/auth/auth.service';
     <h1 class="h3 mb-4">Dashboard</h1>
 
     <div class="row g-3">
-      @if (isManager()) {
+      @if (isSuperAdmin()) {
         <div class="col-12 col-md-6 col-lg-4">
           <div class="card shadow-sm border-0 h-100">
             <div class="card-body">
               <h2 class="h6 text-muted mb-3">Companies</h2>
               <p class="card-text text-muted small mb-3">View, add, and edit companies.</p>
               <a routerLink="/companies" class="btn btn-primary btn-sm">Go to Companies</a>
+            </div>
+          </div>
+        </div>
+      } @else if (isCompanyAdmin()) {
+        <div class="col-12 col-md-6 col-lg-4">
+          <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+              <h2 class="h6 text-muted mb-3">My Company</h2>
+              <p class="card-text text-muted small mb-3">View and edit your company's details.</p>
+              <a routerLink="/company" class="btn btn-primary btn-sm">Go to My Company</a>
             </div>
           </div>
         </div>
@@ -106,8 +116,6 @@ import { AuthService } from '../../core/auth/auth.service';
 export class DashboardComponent {
   private readonly authService = inject(AuthService);
 
-  isManager = computed(() => {
-    const role = this.authService.currentUser()?.role;
-    return role === 'Admin' || role === 'Manager';
-  });
+  isSuperAdmin = computed(() => this.authService.currentUser()?.role === 'Super Admin');
+  isCompanyAdmin = computed(() => this.authService.currentUser()?.role === 'Company Admin');
 }

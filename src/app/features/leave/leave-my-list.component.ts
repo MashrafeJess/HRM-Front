@@ -1,6 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { AuthService } from '../../core/auth/auth.service';
+import { TokenStorageService } from '../../core/auth/token-storage.service';
 import { LeaveService } from './leave.service';
 import { LeaveRequest } from './leave.model';
 
@@ -46,14 +46,26 @@ import { LeaveRequest } from './leave.model';
   `,
 })
 export class LeaveMyListComponent {
-  private readonly authService = inject(AuthService);
+  private readonly tokenStorage = inject(TokenStorageService);
   private readonly leaveService = inject(LeaveService);
 
   requests = signal<LeaveRequest[]>([]);
 
   constructor() {
-    const employeeId = this.authService.currentUser()?.id;
-    if (!employeeId) return;
-    this.leaveService.getEmployeeLeaveRequestsByEmployeeId(employeeId).subscribe((requests) => this.requests.set(requests));
+    const employeeId = this.tokenStorage.getEmployeeId();
+    console.log('[Leave] loading requests for employee', { employeeId });
+
+    if (!employeeId) {
+      console.warn('[Leave] request skipped: employeeId is missing from storage');
+      return;
+    }
+
+    this.leaveService.getEmployeeLeaveRequestsByEmployeeId(employeeId).subscribe({
+      next: (requests) => {
+        console.log('[Leave] requests loaded', { employeeId, count: requests.length, requests });
+        this.requests.set(requests);
+      },
+      error: (error) => console.error('[Leave] failed to load employee requests', error),
+    });
   }
 }
